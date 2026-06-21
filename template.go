@@ -5,124 +5,309 @@ const dashboardHTML = `<!DOCTYPE html>
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Threat Intelligence Command Center</title>
+    <title>Global Threat Monitoring Command Center</title>
     <script src="https://cdn.tailwindcss.com"></script>
-    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://unpkg.com/globe.gl"></script>
     <style>
-        body { background: #0a0e1a; font-family: 'Courier New', monospace; }
-        .glow-green { box-shadow: 0 0 20px rgba(0, 255, 136, 0.15); }
-        .glow-red   { box-shadow: 0 0 20px rgba(255, 59, 59, 0.15); }
-        .threat-row:hover { background: rgba(0, 255, 136, 0.05); }
+        body {
+            background: #05070d;
+            font-family: 'Courier New', monospace;
+            font-size: 12px;
+        }
+        .panel-title {
+            letter-spacing: 0.1em;
+            font-size: 11px;
+        }
         @keyframes pulse-dot { 0%, 100% { opacity: 1; } 50% { opacity: 0.3; } }
         .live-dot { animation: pulse-dot 1.5s infinite; }
-        @keyframes scanline { 0% { transform: translateY(-100%); } 100% { transform: translateY(100vh); } }
-        .scanline {
-            position: fixed; top: 0; left: 0; right: 0; height: 2px;
-            background: linear-gradient(transparent, rgba(0,255,136,0.08), transparent);
-            animation: scanline 8s linear infinite;
-            pointer-events: none; z-index: 9999;
-        }
     </style>
 </head>
-<body class="text-gray-300 min-h-screen">
-<div class="scanline"></div>
+<body class="text-gray-300">
 
-<div class="border-b border-green-900 bg-black bg-opacity-60 px-6 py-3 flex items-center justify-between">
-    <div class="flex items-center gap-3">
-        <div class="w-2 h-2 rounded-full bg-green-400 live-dot"></div>
-        <span class="text-green-400 font-bold tracking-widest text-sm">THREAT INTELLIGENCE COMMAND CENTER</span>
-    </div>
-    <div id="clock" class="text-green-600 text-xs tracking-widest"></div>
-</div>
-
-<div class="grid grid-cols-4 gap-4 p-6">
-    <div class="bg-black bg-opacity-60 border border-green-900 rounded-lg p-4 glow-green">
-        <div class="text-green-600 text-xs tracking-widest mb-1">TOTAL THREATS</div>
-        <div id="stat-total" class="text-3xl font-bold text-green-400">—</div>
-        <div class="text-gray-600 text-xs mt-1">all feeds combined</div>
-    </div>
-    <div class="bg-black bg-opacity-60 border border-red-900 rounded-lg p-4 glow-red">
-        <div class="text-red-500 text-xs tracking-widest mb-1">MALWARE DOWNLOADS</div>
-        <div id="stat-malware" class="text-3xl font-bold text-red-400">—</div>
-        <div class="text-gray-600 text-xs mt-1">active malware hosts</div>
-    </div>
-    <div class="bg-black bg-opacity-60 border border-yellow-900 rounded-lg p-4">
-        <div class="text-yellow-600 text-xs tracking-widest mb-1">PHISHING URLS</div>
-        <div id="stat-phishing" class="text-3xl font-bold text-yellow-400">—</div>
-        <div class="text-gray-600 text-xs mt-1">credential theft pages</div>
-    </div>
-    <div class="bg-black bg-opacity-60 border border-blue-900 rounded-lg p-4">
-        <div class="text-blue-500 text-xs tracking-widest mb-1">LAST UPDATED</div>
-        <div id="stat-updated" class="text-lg font-bold text-blue-400">—</div>
-        <div class="text-gray-600 text-xs mt-1">feed sync time</div>
-    </div>
-</div>
-
-<div class="grid grid-cols-3 gap-4 px-6">
-    <div class="col-span-1 bg-black bg-opacity-60 border border-green-900 rounded-lg p-4">
-        <div class="text-green-600 text-xs tracking-widest mb-4">THREAT TYPE BREAKDOWN</div>
-        <canvas id="threatChart"></canvas>
-    </div>
-    <div class="col-span-2 bg-black bg-opacity-60 border border-green-900 rounded-lg p-4">
-        <div class="flex items-center gap-2 mb-4">
-            <div class="w-2 h-2 rounded-full bg-red-500 live-dot"></div>
-            <span class="text-green-600 text-xs tracking-widest">LIVE THREAT FEED</span>
+    <!-- TOP STATUS BAR -->
+    <div class="border-b border-gray-800 bg-black px-4 py-2 flex items-center justify-between text-xs overflow-x-auto whitespace-nowrap">
+        <div class="flex items-center gap-6">
+            <span class="text-green-400 font-bold tracking-widest">GLOBAL THREAT MONITORING COMMAND CENTER</span>
+            <div id="world-clocks" class="flex items-center gap-5 text-gray-500"></div>
         </div>
-        <div class="grid grid-cols-3 gap-2 text-xs text-gray-600 tracking-widest border-b border-green-900 pb-2 mb-2">
-            <span>TYPE</span>
-            <span class="col-span-2">INDICATOR</span>
+        <div class="flex items-center gap-2 flex-shrink-0">
+            <div class="w-2 h-2 rounded-full bg-green-400 live-dot"></div>
+            <span class="text-green-500">LIVE CONNECTION</span>
         </div>
-        <div id="threat-feed" class="space-y-1 max-h-80 overflow-y-auto"></div>
     </div>
-</div>
+
+    <!-- THE THREE COLUMN GRID -->
+    <div class="grid grid-cols-12 gap-2 p-2" style="height: calc(100vh - 40px);">
+
+        <!-- LEFT COLUMN: takes up 2 of 12 grid units -->
+        <div class="col-span-2 bg-black border border-gray-800 rounded p-3 overflow-y-auto">
+            <div class="text-gray-500 panel-title">LEFT COLUMN</div>
+            <div class="text-gray-700 text-xs mt-2">Price tickers, ISS position, etc. — Phase 7</div>
+        </div>
+
+        <!-- CENTER COLUMN: takes up 7 of 12 grid units (the big one) -->
+        <div class="col-span-7 bg-black border border-gray-800 rounded p-3 overflow-y-auto flex flex-col">
+            <div id="globe-container" style="height: 320px; flex-shrink: 0;"></div>
+
+            <div id="geo-legend" class="flex flex-wrap gap-2 text-xs py-2 border-b border-gray-800"></div>
+
+            <div class="text-red-500 panel-title flex items-center gap-2 mb-2 mt-2">
+                <div class="w-1.5 h-1.5 rounded-full bg-red-500 live-dot"></div>
+                MALWARE — LIVE MALWARE DROP SITES
+            </div>
+            <div id="panel-malware"></div>
+        </div>
+
+        <!-- RIGHT COLUMN: takes up 3 of 12 grid units -->
+        <div class="col-span-3 bg-black border border-gray-800 rounded p-3 overflow-y-auto flex flex-col gap-4">
+
+            <div>
+                <div class="text-yellow-500 panel-title flex items-center gap-2 mb-2">
+                    <div class="w-1.5 h-1.5 rounded-full bg-yellow-500 live-dot"></div>
+                    PHISHING — ACTIVE PHISHING URLS
+                </div>
+                <div id="panel-phishing"></div>
+            </div>
+
+            <div>
+                <div class="text-orange-500 panel-title flex items-center gap-2 mb-2">
+                    <div class="w-1.5 h-1.5 rounded-full bg-orange-500 live-dot"></div>
+                    BOTNET — ACTIVE C2 SERVERS
+                </div>
+                <div id="panel-botnet"></div>
+            </div>
+
+        </div>
+
+    </div>
 
 <script>
-function updateClock() {
-    const now = new Date();
-    document.getElementById('clock').textContent = now.toUTCString().replace('GMT', 'UTC');
-}
-setInterval(updateClock, 1000);
-updateClock();
+    // ── World Clocks ──────────────────────────────────────────
+    // Each entry: a label to display, and the official IANA time zone name
+    // (these names come from a global standard — every OS and browser understands them)
+    const CITIES = [
+        { label: "LONDON",      tz: "Europe/London" },
+        { label: "LOS ANGELES", tz: "America/Los_Angeles" },
+        { label: "SÃO PAULO",   tz: "America/Sao_Paulo" },
+        { label: "MOSCOW",      tz: "Europe/Moscow" },
+        { label: "DUBAI",       tz: "Asia/Dubai" },
+        { label: "MUMBAI",      tz: "Asia/Kolkata" },
+        { label: "HONG KONG",   tz: "Asia/Hong_Kong" },
+    ];
 
-const ctx = document.getElementById('threatChart').getContext('2d');
-const chart = new Chart(ctx, {
-    type: 'doughnut',
-    data: {
-        labels: [],
-        datasets: [{ data: [], backgroundColor: ['#00ff88','#ff3b3b','#ffaa00','#3b9eff','#cc44ff'], borderColor: '#0a0e1a', borderWidth: 3 }]
-    },
-    options: { plugins: { legend: { labels: { color: '#6b7280', font: { family: 'Courier New', size: 11 } } } } }
-});
+    function updateWorldClocks() {
+        const now = new Date(); // one single instant, shared by everyone
+        const container = document.getElementById('world-clocks');
 
-async function refresh() {
-    try {
-        const res  = await fetch('/api/threats/json');
-        const data = await res.json();
+        // .map() transforms each city object into an HTML string,
+        // then .join('') glues all those strings together into one block
+        container.innerHTML = CITIES.map(function(city) {
+            // Intl.DateTimeFormat does the time zone conversion for us
+            const timeStr = new Intl.DateTimeFormat('en-GB', {
+                timeZone: city.tz,
+                hour: '2-digit',
+                minute: '2-digit',
+                hour12: false
+            }).format(now);
 
-        document.getElementById('stat-total').textContent    = data.total.toLocaleString();
-        document.getElementById('stat-malware').textContent  = (data.by_type['malware_download'] || 0).toLocaleString();
-        document.getElementById('stat-phishing').textContent = (data.by_type['phishing'] || 0).toLocaleString();
-        document.getElementById('stat-updated').textContent  = new Date(data.latest).toLocaleTimeString();
-
-        chart.data.labels = Object.keys(data.by_type);
-        chart.data.datasets[0].data = Object.values(data.by_type);
-        chart.update();
-
-        const feed = document.getElementById('threat-feed');
-        feed.innerHTML = data.recent.map(function(t) {
-            return '<div class="threat-row grid grid-cols-3 gap-2 text-xs py-1 border-b border-gray-900">'
-                 + '<span class="text-green-500 truncate">' + t.threat_type + '</span>'
-                 + '<span class="col-span-2 text-gray-400 truncate font-mono">' + t.indicator + '</span>'
-                 + '</div>';
+            return '<span>' + city.label + ' <span class="text-gray-300">' + timeStr + '</span></span>';
         }).join('');
-
-    } catch(e) {
-        console.error('Refresh error:', e);
     }
-}
 
-refresh();
-setInterval(refresh, 10000);
+    updateWorldClocks();
+    setInterval(updateWorldClocks, 1000); // re-run every second, just like a real clock
+
+    // ── Reusable Panel Renderer ──────────────────────────────
+    // containerId: the HTML element's id where this panel will be drawn
+    // columns: an array of objects like { label: "Domain", key: "domain" }
+    //          "label" is what the user SEES, "key" is the property name in the data
+    // rows: an array of data objects, e.g. [{ domain: "evil.com", ip: "1.2.3.4" }]
+    function renderPanel(containerId, columns, rows) {
+        const container = document.getElementById(containerId);
+        if (!container) return; // safety check — do nothing if the container doesn't exist yet
+
+        // Build the header row (the column titles)
+        let headerHTML = '<div class="grid gap-2 text-gray-500 text-xs border-b border-gray-800 pb-1 mb-1" style="grid-template-columns: repeat(' + columns.length + ', 1fr);">';
+        for (let i = 0; i < columns.length; i++) {
+            headerHTML += '<span class="truncate">' + columns[i].label + '</span>';
+        }
+        headerHTML += '</div>';
+
+        // Build each data row
+        let rowsHTML = '';
+        for (let r = 0; r < rows.length; r++) {
+            const row = rows[r];
+            rowsHTML += '<div class="grid gap-2 text-xs py-1 border-b border-gray-900 hover:bg-gray-900" style="grid-template-columns: repeat(' + columns.length + ', 1fr);">';
+
+            for (let c = 0; c < columns.length; c++) {
+                const key = columns[c].key;
+                const value = row[key] !== undefined ? row[key] : '—'; // fallback if data is missing
+                rowsHTML += '<span class="truncate text-gray-400" title="' + value + '">' + value + '</span>';
+            }
+
+            rowsHTML += '</div>';
+        }
+
+        container.innerHTML = headerHTML + rowsHTML;
+    }
+
+    // ── Generic feed panel loader ──────────────────────────────
+    // containerId: where to render this panel
+    // feedSource: which feed_source value to filter for (e.g. "URLHaus", "OpenPhish", "FeodoTracker")
+    async function loadFeedPanel(containerId, feedSource) {
+        try {
+            const res = await fetch('/api/threats/json?source=' + feedSource);
+            const data = await res.json();
+
+            const rows = data.recent.map(function(t) {
+                return {
+                    indicator: t.indicator,
+                    type: t.threat_type,
+                    seen: formatAge(t.seen_at)
+                };
+            });
+
+            renderPanel(containerId, [
+                { label: "INDICATOR", key: "indicator" },
+                { label: "TYPE",      key: "type" },
+                { label: "SEEN",      key: "seen" }
+            ], rows);
+
+        } catch (e) {
+            console.error('Failed to load panel for ' + feedSource + ':', e);
+        }
+    }
+
+    // Converts a timestamp like "2024-06-18T10:30:00Z" into "2h ago" style text
+    function formatAge(isoString) {
+        const seenDate = new Date(isoString);
+        const now = new Date();
+        const diffMs = now - seenDate; // subtracting two Dates gives milliseconds
+        const diffMins = Math.floor(diffMs / 60000);
+
+        if (diffMins < 1) return "now";
+        if (diffMins < 60) return diffMins + "m";
+        const diffHours = Math.floor(diffMins / 60);
+        if (diffHours < 24) return diffHours + "h";
+        const diffDays = Math.floor(diffHours / 24);
+        return diffDays + "d";
+    }
+
+    loadFeedPanel('panel-malware', 'URLHaus');
+    loadFeedPanel('panel-phishing', 'OpenPhish');
+    loadFeedPanel('panel-botnet', 'FeodoTracker');
+
+    setInterval(function() {
+        loadFeedPanel('panel-malware', 'URLHaus');
+        loadFeedPanel('panel-phishing', 'OpenPhish');
+        loadFeedPanel('panel-botnet', 'FeodoTracker');
+    }, 10000);
+
+    // ── Deterministic color generator ────────────────────────
+    // Turns any string into a consistent, repeatable color.
+    // Same input string -> always the exact same color, forever.
+    function stringToColor(str) {
+        let hash = 0;
+        // Walk through every character in the string and build up a number
+        // charCodeAt() gives the numeric code behind a character (like 'A' = 65)
+        for (let i = 0; i < str.length; i++) {
+            hash = str.charCodeAt(i) + ((hash << 5) - hash);
+            // << is a "bit shift" operator — this is just a fast way to
+            // multiply and mix the number around so similar strings don't
+            // accidentally produce similar colors
+        }
+        // Force the hash into a 0-360 range (the full color wheel in HSL format)
+        const hue = Math.abs(hash) % 360;
+
+        // HSL = Hue, Saturation, Lightness. We fix saturation/lightness so
+        // every color stays vivid and visible against our dark background,
+        // only the HUE (the actual color) changes per location.
+        return 'hsl(' + hue + ', 80%, 60%)';
+    }
+
+    // ── Globe Setup ───────────────────────────────────────────
+    // We only want to CREATE the globe object once. If we created
+    // a brand new globe every time we refresh data, we'd get
+    // duplicate spinning globes stacked on top of each other.
+    // So we declare this variable OUTSIDE any function, and only
+    // build it the very first time.
+    let myGlobe = null;
+
+    function initGlobe() {
+        const container = document.getElementById('globe-container');
+
+        // Globe() is the function globe.gl gives us. We chain methods onto it
+        // (this is called "method chaining" — each .something() returns the
+        // globe itself again, so you can keep calling more methods in a row,
+        // similar to how jQuery or some JS libraries work)
+        myGlobe = Globe()
+            (container) // this tells globe.gl WHERE on the page to render
+
+            // Use a free, public dark-themed earth texture image
+            .globeImageUrl('//unpkg.com/three-globe/example/img/earth-night.jpg')
+            .backgroundColor('rgba(0,0,0,0)') // transparent background, blends with our dark page
+
+            // Points configuration — glowing dots instead of arcs
+            .pointAltitude(0.01)   // how far the dot floats above the surface
+            .pointRadius(0.4)      // size of each glowing dot
+            .pointColor('color')   // tells globe.gl: "read the color from each point's .color field"
+            .pointLabel('label')   // shows a text tooltip on hover
+            .pointsMerge(false);
+
+        // Auto-rotate the globe slowly, just like the reel screenshot
+        myGlobe.controls().autoRotate = true;
+        myGlobe.controls().autoRotateSpeed = 0.5;
+
+        // Resize the globe to fit its container nicely
+        myGlobe.width(container.offsetWidth);
+        myGlobe.height(320);
+    }
+
+    async function loadGlobePoints() {
+        try {
+            const res = await fetch('/api/arcs');
+            const points = await res.json();
+
+            // Attach a unique color + label to every point before handing it to globe.gl
+            points.forEach(function(p) {
+                const key = p.city + ',' + p.country;
+                p.color = stringToColor(key);
+                p.lat = p.startLat;  // globe.gl's pointsData wants "lat"/"lng", not "startLat"
+                p.lng = p.startLng;
+                p.label = p.city + ', ' + p.country + ' (' + p.count + ' threats)';
+            });
+
+            myGlobe.pointsData(points);
+
+            // Reuse the same color logic to draw the matching legend below
+            renderGeoLegend(points);
+
+        } catch (e) {
+            console.error('Failed to load globe points:', e);
+        }
+    }
+
+    // ── Color-coded legend, matches the globe dots exactly ───
+    function renderGeoLegend(points) {
+        const legend = document.getElementById('geo-legend');
+        if (!legend) return;
+
+        // Sort by count descending, so the most active threat locations show first
+        // .slice() makes a copy first so we don't scramble the original array order
+        const sorted = points.slice().sort(function(a, b) { return b.count - a.count; });
+
+        legend.innerHTML = sorted.map(function(p) {
+            return '<span class="flex items-center gap-1 px-2 py-0.5 rounded" style="background: rgba(255,255,255,0.05);">'
+                 + '<span style="width:8px; height:8px; border-radius:50%; background:' + p.color + '; display:inline-block;"></span>'
+                 + '<span class="text-gray-400">' + p.city + ', ' + p.country + ' (' + p.count + ')</span>'
+                 + '</span>';
+        }).join('');
+    }
+
+    initGlobe();
+    loadGlobePoints();
+    setInterval(loadGlobePoints, 30000); // refresh every 30 seconds — locations don't change as fast as the table
 </script>
+
 </body>
 </html>`

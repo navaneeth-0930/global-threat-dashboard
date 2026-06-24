@@ -22,8 +22,8 @@ func main() {
 	go fetchURLHaus(db)
 	go fetchOpenPhish(db)
 	go fetchFeodoTracker(db)
+	go fetchThreatFox(db)
 	go geolocateNewThreats(db)
-
 	// Dashboard UI
 	http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "text/html")

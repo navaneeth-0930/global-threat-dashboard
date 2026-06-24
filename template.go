@@ -39,11 +39,25 @@ const dashboardHTML = `<!DOCTYPE html>
     <!-- THE THREE COLUMN GRID -->
     <div class="grid grid-cols-12 gap-2 p-2" style="height: calc(100vh - 40px);">
 
-        <!-- LEFT COLUMN: takes up 2 of 12 grid units -->
-        <div class="col-span-2 bg-black border border-gray-800 rounded p-3 overflow-y-auto">
-            <div class="text-gray-500 panel-title">LEFT COLUMN</div>
-            <div class="text-gray-700 text-xs mt-2">Price tickers, ISS position, etc. — Phase 7</div>
-        </div>
+       <!-- LEFT COLUMN -->
+<div class="col-span-2 bg-black border border-gray-800 rounded p-3 overflow-y-auto flex flex-col gap-4">
+
+    <div>
+        <div class="text-green-500 panel-title mb-2">CRYPTO — LIVE PRICES</div>
+        <div id="crypto-prices" class="text-gray-500 text-xs">Loading...</div>
+    </div>
+
+    <div>
+        <div class="text-blue-400 panel-title mb-2">ISS — LIVE POSITION</div>
+        <div id="iss-position" class="text-gray-500 text-xs">Loading...</div>
+    </div>
+
+    <div>
+        <div class="text-orange-400 panel-title mb-2">USGS — RECENT QUAKES</div>
+        <div id="quake-list" class="text-gray-500 text-xs"></div>
+    </div>
+
+</div>
 
         <!-- CENTER COLUMN: takes up 7 of 12 grid units (the big one) -->
         <div class="col-span-7 bg-black border border-gray-800 rounded p-3 overflow-y-auto flex flex-col">
@@ -76,6 +90,13 @@ const dashboardHTML = `<!DOCTYPE html>
                 </div>
                 <div id="panel-botnet"></div>
             </div>
+            <div>
+    <div class="text-purple-500 panel-title flex items-center gap-2 mb-2">
+        <div class="w-1.5 h-1.5 rounded-full bg-purple-500 live-dot"></div>
+        THREATFOX — TRACKED IOCs
+    </div>
+    <div id="panel-threatfox"></div>
+</div>
 
         </div>
 
@@ -194,14 +215,16 @@ const dashboardHTML = `<!DOCTYPE html>
     }
 
     loadFeedPanel('panel-malware', 'URLHaus');
+loadFeedPanel('panel-phishing', 'OpenPhish');
+loadFeedPanel('panel-botnet', 'FeodoTracker');
+loadFeedPanel('panel-threatfox', 'ThreatFox');
+
+setInterval(function() {
+    loadFeedPanel('panel-malware', 'URLHaus');
     loadFeedPanel('panel-phishing', 'OpenPhish');
     loadFeedPanel('panel-botnet', 'FeodoTracker');
-
-    setInterval(function() {
-        loadFeedPanel('panel-malware', 'URLHaus');
-        loadFeedPanel('panel-phishing', 'OpenPhish');
-        loadFeedPanel('panel-botnet', 'FeodoTracker');
-    }, 10000);
+    loadFeedPanel('panel-threatfox', 'ThreatFox');
+}, 10000);
 
     // ── Deterministic color generator ────────────────────────
     // Turns any string into a consistent, repeatable color.
@@ -307,6 +330,101 @@ const dashboardHTML = `<!DOCTYPE html>
     initGlobe();
     loadGlobePoints();
     setInterval(loadGlobePoints, 30000); // refresh every 30 seconds — locations don't change as fast as the table
+    // ── Widget: Crypto Prices ──────────────────────────────────
+async function loadCryptoPrices() {
+    try {
+        const res = await fetch('https://api.coingecko.com/api/v3/simple/price?ids=bitcoin,ethereum&vs_currencies=usd&include_24hr_change=true');
+        const data = await res.json();
+
+        const container = document.getElementById('crypto-prices');
+
+        // data looks like: { bitcoin: { usd: 61204, usd_24h_change: 2.46 }, ethereum: {...} }
+        const btcChange = data.bitcoin.usd_24h_change;
+        const ethChange = data.ethereum.usd_24h_change;
+
+        // Pick green or red text depending on whether price went up or down today
+        const btcColor = btcChange >= 0 ? 'text-green-400' : 'text-red-400';
+        const ethColor = ethChange >= 0 ? 'text-green-400' : 'text-red-400';
+
+        container.innerHTML =
+            '<div class="mb-2">BTC · USD<br>'
+            + '<span class="text-lg text-gray-200">$' + Math.round(data.bitcoin.usd).toLocaleString() + '</span> '
+            + '<span class="' + btcColor + '">' + btcChange.toFixed(2) + '%</span></div>'
+            + '<div>ETH · USD<br>'
+            + '<span class="text-lg text-gray-200">$' + Math.round(data.ethereum.usd).toLocaleString() + '</span> '
+            + '<span class="' + ethColor + '">' + ethChange.toFixed(2) + '%</span></div>';
+
+    } catch (e) {
+        console.error('Failed to load crypto prices:', e);
+    }
+}
+
+loadCryptoPrices();
+setInterval(loadCryptoPrices, 60000); // prices don't need to update faster than once a minute
+
+
+// ── Widget: ISS Position ───────────────────────────────────
+async function loadISSPosition() {
+    try {
+        const res = await fetch('https://api.open-notify.org/iss-now.json');
+        const data = await res.json();
+
+        const lat = parseFloat(data.iss_position.latitude).toFixed(2);
+        const lng = parseFloat(data.iss_position.longitude).toFixed(2);
+
+        // Convert the Unix timestamp (seconds since 1970) into a readable time
+        const timestamp = new Date(data.timestamp * 1000);
+
+        document.getElementById('iss-position').innerHTML =
+            'LAT, LNG<br>'
+            + '<span class="text-gray-200">' + lat + '°, ' + lng + '°</span><br>'
+            + '<span class="text-gray-600">as of ' + timestamp.toLocaleTimeString() + '</span>';
+
+    } catch (e) {
+        console.error('Failed to load ISS position:', e);
+    }
+}
+
+loadISSPosition();
+setInterval(loadISSPosition, 5000); // the ISS moves fast — refresh every 5 seconds
+
+
+// ── Widget: Recent Earthquakes ─────────────────────────────
+async function loadEarthquakes() {
+    try {
+        // This USGS endpoint returns earthquakes from the last hour, magnitude 2.5+
+        const res = await fetch('https://earthquake.usgs.gov/earthquakes/feed/v1.0/summary/2.5_hour.geojson');
+        const data = await res.json();
+
+        const container = document.getElementById('quake-list');
+
+        if (data.features.length === 0) {
+            container.innerHTML = '<span class="text-gray-600">No recent quakes ≥ 2.5</span>';
+            return;
+        }
+
+        // Each "feature" is one earthquake. properties.mag = magnitude,
+        // properties.place = human-readable location, geometry.coordinates = [lng, lat, depth]
+        container.innerHTML = data.features.slice(0, 5).map(function(quake) {
+            const mag = quake.properties.mag.toFixed(1);
+            const place = quake.properties.place;
+            const magColor = quake.properties.mag >= 5 ? 'text-red-400' : 'text-yellow-500';
+
+            return '<div class="mb-1 pb-1 border-b border-gray-900">'
+                 + '<span class="' + magColor + '">M' + mag + '</span> '
+                 + '<span class="text-gray-400">' + place + '</span>'
+                 + '</div>';
+        }).join('');
+
+    } catch (e) {
+        console.error('Failed to load earthquake data:', e);
+    }
+}
+
+loadEarthquakes();
+setInterval(loadEarthquakes, 60000); // earthquakes are infrequent, no need to poll fast
+
+
 </script>
 
 </body>

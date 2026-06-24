@@ -2,10 +2,13 @@ package main
 
 import (
 	"bufio"
+	"bytes"
 	"encoding/csv"
+	"encoding/json"
 	"io"
 	"log"
 	"net/http"
+	"os"
 	"strings"
 	"time"
 
@@ -204,6 +207,119 @@ func parseFeodoCSV(db *sqlx.DB, body io.Reader) int {
 			ThreatType: malwareFamily,
 			Indicator:  indicator,
 			RawData:    strings.Join(row, "|"),
+			SeenAt:     seenAt,
+		}
+
+		wasInserted, err := insertThreat(db, threat)
+		if err != nil {
+			log.Printf("Insert error: %v\n", err)
+			continue
+		}
+		if wasInserted {
+			newCount++
+		}
+	}
+
+	return newCount
+}
+
+const THREATFOX_URL = "https://threatfox-api.abuse.ch/api/v1/"
+
+func fetchThreatFox(db *sqlx.DB) {
+	apiKey := os.Getenv("THREATFOX_KEY")
+	if apiKey == "" {
+		log.Println("⚠️ THREATFOX_KEY not set — skipping ThreatFox feed entirely")
+		return // exit the goroutine early; no point retrying forever without a key
+	}
+
+	for {
+		log.Println("🦊 Fetching ThreatFox feed...")
+
+		// Build the JSON body we want to send: { "query": "get_iocs", "days": 1 }
+		// This asks ThreatFox for IOCs added in the last 1 day.
+		requestBody, _ := json.Marshal(map[string]interface{}{
+			"query": "get_iocs",
+			"days":  1,
+		})
+
+		// http.NewRequest lets us build a request manually, since http.Get()
+		// only knows how to do simple GET requests with no custom headers/body.
+		// bytes.NewBuffer wraps our []byte JSON into something the http
+		// library knows how to stream as a request body.
+		req, err := http.NewRequest("POST", THREATFOX_URL, bytes.NewBuffer(requestBody))
+		if err != nil {
+			log.Printf("❌ ThreatFox request build error: %v\n", err)
+			time.Sleep(5 * time.Minute)
+			continue
+		}
+
+		// Headers are metadata sent alongside the request. This is how we
+		// authenticate — same idea as showing ID before being let into a building.
+		req.Header.Set("Auth-Key", apiKey)
+		req.Header.Set("Content-Type", "application/json")
+
+		// http.DefaultClient.Do() actually sends the request we built.
+		// (http.Get() was secretly just a shortcut for this same thing.)
+		resp, err := http.DefaultClient.Do(req)
+		if err != nil {
+			log.Printf("❌ ThreatFox fetch error: %v — retrying in 5 min\n", err)
+			time.Sleep(5 * time.Minute)
+			continue
+		}
+
+		newCount := parseThreatFoxJSON(db, resp.Body)
+		resp.Body.Close()
+		log.Printf("✅ ThreatFox: inserted %d new threats\n", newCount)
+
+		time.Sleep(5 * time.Minute)
+	}
+}
+
+// ThreatFoxResponse mirrors the top-level shape ThreatFox sends back
+type ThreatFoxResponse struct {
+	QueryStatus string          `json:"query_status"`
+	Data        []ThreatFoxItem `json:"data"`
+}
+
+// ThreatFoxItem mirrors one single IOC entry inside "data"
+type ThreatFoxItem struct {
+	IOC        string `json:"ioc"`
+	ThreatType string `json:"threat_type"`       // e.g. "botnet_cc", "payload_delivery"
+	IOCType    string `json:"ioc_type"`          // e.g. "ip:port", "url", "domain"
+	Malware    string `json:"malware_printable"` // human-readable malware family name
+	FirstSeen  string `json:"first_seen_utc"`
+}
+
+func parseThreatFoxJSON(db *sqlx.DB, body io.Reader) int {
+	var response ThreatFoxResponse
+
+	if err := json.NewDecoder(body).Decode(&response); err != nil {
+		log.Printf("ThreatFox JSON parse error: %v\n", err)
+		return 0
+	}
+
+	if response.QueryStatus != "ok" {
+		log.Printf("ThreatFox query did not succeed: %s\n", response.QueryStatus)
+		return 0
+	}
+
+	newCount := 0
+
+	for _, item := range response.Data {
+		if item.IOC == "" {
+			continue
+		}
+
+		seenAt, err := time.Parse("2006-01-02 15:04:05", item.FirstSeen)
+		if err != nil {
+			seenAt = time.Now()
+		}
+
+		threat := Threat{
+			FeedSource: "ThreatFox",
+			ThreatType: item.Malware, // we use the malware family name as the "type" shown in our table
+			Indicator:  item.IOC,
+			RawData:    item.ThreatType + "|" + item.IOCType,
 			SeenAt:     seenAt,
 		}
 
